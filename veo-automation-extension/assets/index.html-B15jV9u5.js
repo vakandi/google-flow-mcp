@@ -139471,27 +139471,7 @@ const QA = ua({
       return {
         showUpdateModal: o,
         isAutoUpdating: i,
-        checkForUpdate: async () => {
-          const a = await t();
-          if (!a || e(a, n)) {
-            return;
-          }
-          o.value = true;
-          if (typeof chrome == "undefined" || !chrome?.runtime?.requestUpdateCheck || !chrome?.runtime?.onUpdateAvailable) {
-            i.value = false;
-            return;
-          }
-          const r = await chrome.runtime.requestUpdateCheck();
-          if (r && r.status !== "no_update" && r.status !== "throttled") {
-            i.value = true;
-            chrome.runtime.onUpdateAvailable.addListener(function t(e) {
-              chrome.runtime.onUpdateAvailable.removeListener(t);
-              chrome.runtime.reload();
-            });
-          } else {
-            i.value = false;
-          }
-        }
+        checkForUpdate: async () => {}
       };
     }(o);
     const h = Qo(false);
@@ -139757,7 +139737,7 @@ const QA = ua({
       const v = Fa("PTabs");
       is();
       return ls("div", zA, [gs(n), gs(a), gs(Ad, {
-        visible: oi(m),
+        visible: oi(!1),
         "is-auto-updating": oi(g)
       }, null, 8, ["visible", "is-auto-updating"]), gs(yu, {
         visible: h.value,
@@ -139767,7 +139747,7 @@ const QA = ua({
         "onUpdate:visible": e[1] ||= t => Zo(i) ? i.value = t : null
       }, null, 8, ["visible"]), oi(l) ? vs("", true) : (is(), cs(md, {
         key: 0,
-        "flow-url": oi("https://labs.google/fx/tools/flow"),
+        "flow-url": oi("https://flow.google.com/project/97bfb91d-2885-4b40-bba2-2d80b25e3e33"),
         onNavigate: oi(c)
       }, null, 8, ["flow-url", "onNavigate"])), ms("div", null, [ms("header", UA, [ms("div", jA, [ms("div", null, [ms("h1", HA, [hs(In(t.$t("sidePanel.header.title")) + " ", 1), ms("span", GA, "v" + In(oi(o)), 1)]), ms("p", WA, In(t.$t("sidePanel.header.description")), 1), ms("div", KA, [ms("span", qA, In(t.$t("sidePanel.header.communityCtaPrefix")), 1), ms("a", YA, [hs(In(t.$t("sidePanel.header.communityCtaLink")) + " ", 1), e[6] ||= ms("i", {
         class: "pi pi-external-link text-xs",

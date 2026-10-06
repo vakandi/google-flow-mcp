@@ -7492,7 +7492,113 @@
       return false;
     }
   };
+  const FLOW_TILE_SEL = "flow-grid-tile-container";
+  let flowBaselineTokens = null;
+
+  function isAngularFlow() {
+    return !!document.querySelector(FLOW_TILE_SEL);
+  }
+
+  function flowTileTokens(tile) {
+    const out = [];
+    tile.querySelectorAll("img.image, img.thumbnail, video").forEach(el => {
+      const s = el.currentSrc || el.src || "";
+      const m = s.match(/\/asb\/([^=?]+)/);
+      if (m) out.push(m[1]);
+    });
+    return out;
+  }
+
+  function flowSnapshotTokens() {
+    const set = new Set();
+    document.querySelectorAll(FLOW_TILE_SEL).forEach(tile => {
+      flowTileTokens(tile).forEach(tok => set.add(tok));
+    });
+    return set;
+  }
+
+  function flowIsNewTile(tile) {
+    const tokens = flowTileTokens(tile);
+    if (tokens.length === 0) return true;
+    return !tokens.some(tok => flowBaselineTokens.has(tok));
+  }
+
+  function flowNewTiles() {
+    return [...document.querySelectorAll(FLOW_TILE_SEL)].filter(flowIsNewTile);
+  }
+
+  async function flowRevealVideoUrl(tile) {
+    let v = tile.querySelector("video[src]");
+    if (v && v.src) return v.src;
+    for (let a = 0; a < 12; a++) {
+      tile.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+      tile.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      const handle = tile.querySelector("flow-tile-hover-footer .footer-left") || tile.querySelector(".footer-left") || tile.querySelector("img.thumbnail") || tile;
+      handle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      handle.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      handle.click();
+      await p(700);
+      v = tile.querySelector("video[src]");
+      if (v && v.src) return v.src;
+    }
+    return null;
+  }
+
+  function flowQualityItag(quality) {
+    return { "1080": "37", "2k": "37", "4k": "37", "720": "22", "480": "18" }[quality] || "22";
+  }
+
+  function flowRetune(url, quality) {
+    const itag = flowQualityItag(quality);
+    return url.replace(/=mm,[^=]*$/, `=mm,${itag},15`);
+  }
+
+  async function flowCollect(t, cancel) {
+    const wanted = Math.max(1, t.outputCount || 1);
+    let tiles = [];
+    for (let attempt = 0; attempt < 300; attempt++) {
+      if (cancel && cancel()) return { success: false, cancelled: true };
+      tiles = flowNewTiles().filter(tile => tile.querySelector("img.image, img.thumbnail, video"));
+      if (tiles.length >= wanted) break;
+      await p(2000);
+    }
+    tiles = tiles.slice(0, wanted);
+    if (tiles.length === 0) {
+      A(`⚠️ No new media tile appeared for prompt ${t.promptIndex}`);
+      return { success: false, error: "No media tile found" };
+    }
+
+    const isVideo = tiles.some(tile => tile.querySelector("flow-video-tile"));
+    const urls = [];
+    for (let k = 0; k < tiles.length; k++) {
+      if (cancel && cancel()) return { success: false, cancelled: true };
+      const tile = tiles[k];
+      let url = null;
+      if (isVideo) {
+        url = await flowRevealVideoUrl(tile);
+        if (url) url = flowRetune(url, t.autoDownloadResourceQuality);
+      }
+      if (!url) {
+        const el = tile.querySelector("img.image, video[src]");
+        if (el) url = el.currentSrc || el.src || null;
+      }
+      if (!url) {
+        A(`⚠️ Tile ${k + 1} for prompt ${t.promptIndex} exposed no media URL`);
+        continue;
+      }
+      urls.push(url);
+      S(`📹 Resource ${t.promptIndex}#${k + 1}: ${url.substring(0, 90)}...`);
+    }
+    if (urls.length === 0) return { success: false, error: "No media URL resolved" };
+    return { success: true, urls };
+  }
+
   const H = async (e, t, n) => {
+    if (isAngularFlow()) {
+      flowBaselineTokens = flowSnapshotTokens();
+      console.log("[CS] Angular Flow detected, baseline tokens:", flowBaselineTokens.size);
+      return { success: true, tileIds: [] };
+    }
     if (!n) {
       return {
         success: false,
@@ -7670,6 +7776,28 @@
     }
   };
   const U = async (e, t, n, r) => {
+    if (isAngularFlow()) {
+      if (!flowBaselineTokens) flowBaselineTokens = new Set();
+      const out = await flowCollect(t, n);
+      console.log("[CS] flowCollect:", out.success, "urls:", out.urls?.length || 0);
+      if (!out.success) return out;
+      const letters = "abcdefghijklmnopqrstuvwxyz".split("");
+      const idx = String(t.promptIndex).padStart(3, "0");
+      const folder = (t.folderName || "").trim();
+      for (let u = 0; u < out.urls.length; u++) {
+        const ext = /[?&]itag=|=mm,|\.mp4(\?|$)/i.test(out.urls[u]) ? "mp4" : "png";
+        const name = `${idx}_${E(t.prompt)}${out.urls.length > 1 ? `_${letters[u] || u + 1}` : ""}.${ext}`;
+        await chrome.runtime.sendMessage({
+          type: "DOWNLOAD_VIDEO",
+          url: out.urls[u],
+          filename: name,
+          folder: folder,
+          autoChangeFileName: t.autoChangeFileName !== false,
+          _downloadRef: t._downloadRef
+        }).catch(() => {});
+      }
+      return out;
+    }
     if (!r) {
       return {
         success: false

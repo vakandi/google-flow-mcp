@@ -11,7 +11,22 @@ let serverPollTimer = null;
 let processingTaskId = null;
 let lastProcessedTaskId = null;
 const SERVER_URL = "http://localhost:9876";
+
+// ── Google Flow location ───────────────────────────────────
+// labs.google.com/fx/tools/flow is a hard 404; Flow now lives on flow.google.com.
+const FLOW_URL = "https://flow.google.com/project/97bfb91d-2885-4b40-bba2-2d80b25e3e33";
+const FLOW_TAB_PATTERNS = ["*://flow.google.com/*", "*://labs.google.com/*", "*://labs.google/*"];
+
 let _pendingDownloadFiles = [];
+
+function safeFilename(url, fallback) {
+  const named = url.match(/[?&]name=([^&]+)/);
+  let base = named ? named[1] : (url.match(/\/([^/]+?)(?:\?|$)/) || [])[1] || fallback;
+  base = decodeURIComponent(base).replace(/=mm,[^=]*$/, "").replace(/\.[a-z0-9]{2,4}$/i, "");
+  base = base.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "");
+  if (base.length > 60) base = base.slice(0, 60);
+  return base || fallback;
+}
 let _pendingTimer = null;
 
 async function flushPendingDownloads() {
@@ -50,8 +65,8 @@ async function processTask(task) {
   if (!task || task.empty || processingTaskId) return;
   if (task.id === lastProcessedTaskId) return;
   processingTaskId = task.id;
-  let tabs = (await chrome.tabs.query({ url: ["*://labs.google/*", "*://labs.google.com/*"] })).filter(t => t.url && t.url.includes("flow"));
-  if (tabs.length === 0) tabs = [await chrome.tabs.create({ url: "https://labs.google/flow" })];
+  let tabs = (await chrome.tabs.query({ url: FLOW_TAB_PATTERNS })).filter(t => t.url && t.url.includes("flow.google.com"));
+  if (tabs.length === 0) tabs = [await chrome.tabs.create({ url: FLOW_URL })];
   const tabId = tabs[0].id;
   try {
     await chrome.tabs.reload(tabId);
@@ -190,7 +205,7 @@ chrome.runtime.onInstalled.addListener(async e => {
     await (async () => {
       try {
         const t = (await chrome.tabs.query({
-          url: ["*://labs.google.com/*"]
+          url: FLOW_TAB_PATTERNS
         })).filter(e => e.url && e.url.includes("flow"));
         for (const a of t) {
           if (a.id) {
@@ -365,7 +380,7 @@ chrome.runtime.onMessage.addListener((i, d, m) => {
                   console.log("[SW] fetch resultUrl:", url.substring(0,80), resp.status);
                   if (!resp.ok) continue;
                   const blob = await resp.blob();
-                  let filename = (url.match(/[?&]name=([^&]+)/) || url.match(/\/([^/]+?)(?:\?|$)/))?.[1] || `result_${Date.now()}.bin`;
+                  let filename = safeFilename(url, `result_${Date.now()}`);
                   const ct = resp.headers.get("content-type") || "";
                   if (ct.startsWith("image/jpeg") && !filename.endsWith(".jpg")) filename += ".jpg";
                   else if (ct.startsWith("image/png") && !filename.endsWith(".png")) filename += ".png";
@@ -467,7 +482,7 @@ chrome.runtime.onMessage.addListener((i, d, m) => {
     case "CHECK_BANNER":
       (async () => {
         try {
-          let tabs = await chrome.tabs.query({ url: "*://labs.google.com/*" });
+          let tabs = await chrome.tabs.query({ url: FLOW_TAB_PATTERNS });
           tabs = tabs.filter(t => t.url && t.url.includes("flow"));
           if (tabs.length === 0 || !tabs[0].id) {
             m({ bannerDetected: null, error: "No Flow tab" });
@@ -501,7 +516,7 @@ chrome.runtime.onMessage.addListener((i, d, m) => {
           await (async () => {
             const e = ["__Secure", "SID", "SSID", "HSID", "APISID", "SAPISID", "LSID", "NID", "1P_JAR"];
             const t = (await chrome.cookies.getAll({
-              domain: "labs.google.com"
+              domain: "flow.google.com"
             })).filter(t => !e.some(e => t.name.startsWith(e)));
             await Promise.all(t.map(e => chrome.cookies.remove({
               url: `https://${e.domain.replace(/^\./, "")}${e.path}`,
@@ -518,7 +533,7 @@ chrome.runtime.onMessage.addListener((i, d, m) => {
                 n.add(e);
               }
               await chrome.debugger.sendCommand(t, "Storage.clearDataForOrigin", {
-                origin: "https://labs.google.com",
+                origin: "https://flow.google.com",
                 storageTypes: "local_storage"
               });
             })(e);
