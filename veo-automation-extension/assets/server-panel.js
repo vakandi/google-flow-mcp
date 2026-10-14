@@ -1,11 +1,13 @@
 (function () {
   "use strict";
 
-  const SERVER_HTTP_URL = "http://localhost:9876";
+  // Display/copy only — the panel never fetches; the service worker does, via sendMessage.
+  // Keep this in sync with SERVER_URL in the service worker.
+  const SERVER_HTTP_URL = "http://127.0.0.1:9876";
+  const PROJECT_URL_KEY = "flowProjectUrl";
   let injectAttempts = 0;
   let pollTimer = null;
   let queueTimer = null;
-  let bannerTimer = null;
   let injected = false;
 
   /* ── Styles ─────────────────────────────────────────────── */
@@ -32,6 +34,9 @@
     ".server-toggle::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 2px rgba(0,0,0,.15)}" +
     ".server-toggle.active::after{transform:translateX(18px)}" +
     ".server-toggle:disabled{opacity:.5;cursor:not-allowed}" +
+    ".server-project-input{flex:1;min-width:0;margin-left:8px;padding:5px 8px;font-size:11px;font-family:monospace;border:1px solid var(--p-content-border-color,#e5e7eb);border-radius:5px;background:var(--p-surface-50,#f9fafb);color:var(--p-text-color,#374151)}" +
+    ".server-project-input:focus{outline:none;border-color:var(--p-primary-color,#3b82f6);background:#fff}" +
+    ".server-project-input.saved{border-color:#22c55e}" +
     ".server-queue-section{margin-top:12px}" +
     ".server-queue-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}" +
     ".server-queue-header span{font-size:13px;font-weight:500;color:var(--p-text-color,#374151)}" +
@@ -48,12 +53,10 @@
     ".server-task-status.cancelled{color:#9ca3af}" +
     ".server-task-progress{font-size:11px;color:var(--p-text-secondary-color,#6b7280);min-width:32px;text-align:right}" +
     ".server-empty-queue{font-size:12px;color:var(--p-text-secondary-color,#9ca3af);padding:12px 0;text-align:center}" +
-    ".server-error{font-size:11px;color:#ef4444;padding:2px 0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
-    "#server-banner-status{display:flex;align-items:center;gap:6px;margin-bottom:12px;padding:8px 10px;border-radius:6px;font-size:12px;background:var(--p-surface-50,#f9fafb);border:1px solid var(--p-content-border-color,#e5e7eb)}" +
-    "#server-banner-status .value{font-weight:500}" +
-    ".banner-detected{color:#f59e0b}" +
-    ".banner-clear{color:#22c55e}" +
-    ".banner-checking{color:#9ca3af}";
+    ".server-close-btn{font-size:11px;padding:2px 8px;border:1px solid var(--p-content-border-color,#e5e7eb);border-radius:4px;background:var(--p-surface-50,#f9fafb);cursor:pointer;color:var(--p-text-secondary-color,#6b7280)}" +
+    ".server-close-btn:hover{background:var(--p-surface-100,#f3f4f6)}" +
+    ".server-close-bar{position:fixed;top:0;left:0;right:0;z-index:2147483647;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:var(--p-surface-0,#fff);border-bottom:1px solid var(--p-content-border-color,#e5e7eb);box-shadow:0 1px 4px rgba(0,0,0,.08)}" +
+    ".server-error{font-size:11px;color:#ef4444;padding:2px 0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}";
 
   /* ── Inject styles ─────────────────────────────────────── */
 
@@ -92,53 +95,45 @@
     return null;
   }
 
-  /* ── Banner detection ──────────────────────────────────── */
-
-  function checkBanner() {
-    chrome.runtime.sendMessage({ type: "CHECK_BANNER" }, function (resp) {
-      var textEl = document.getElementById("banner-status-text");
-      if (!textEl) return;
-      if (resp && resp.bannerDetected === true) {
-        textEl.textContent = "⚠ High demand detected";
-        textEl.className = "value banner-detected";
-      } else if (resp && resp.bannerDetected === false) {
-        textEl.textContent = "✓ Normal";
-        textEl.className = "value banner-clear";
-      } else {
-        textEl.textContent = "checking...";
-        textEl.className = "value banner-checking";
-      }
-    });
-  }
-
-  function startBannerPolling() {
-    stopBannerPolling();
-    checkBanner();
-    bannerTimer = setInterval(checkBanner, 10000);
-  }
-
-  function stopBannerPolling() {
-    if (bannerTimer) { clearInterval(bannerTimer); bannerTimer = null; }
-  }
-
   /* ── Create UI elements ────────────────────────────────── */
+
+  function createCloseButton() {
+    var bar = document.createElement("div");
+    bar.id = "server-close-bar";
+    bar.className = "server-row";
+    bar.innerHTML = '<span class="server-label">Panel</span>' +
+      '<button class="server-close-btn" id="server-close-btn" title="Close side panel">Close</button>';
+
+    bar.querySelector("#server-close-btn").addEventListener("click", async function () {
+      try {
+        if (chrome.sidePanel && chrome.sidePanel.setOptions) {
+          await chrome.sidePanel.setOptions({ enabled: false });
+        }
+      } catch (e) {}
+      try { window.close(); } catch (e) {}
+    });
+
+    return bar;
+  }
 
   function createUI() {
     var container = document.createElement("div");
     container.id = "server-mode-section";
 
-    /* Banner status bar */
-    var banner = document.createElement("div");
-    banner.id = "server-banner-status";
-    banner.innerHTML = '<span>Flow Demand:</span> <span class="value banner-checking" id="banner-status-text">checking...</span>';
+    container.appendChild(createCloseButton());
 
-    /* Status row */
     var row1 = document.createElement("div");
     row1.className = "server-row";
     row1.innerHTML = '<span class="server-label">Status</span>' +
       '<span class="server-status" id="server-status-label">' +
       '<span class="server-status-dot stopped" id="server-status-dot"></span>' +
       '<span id="server-status-text">Stopped</span></span>';
+
+    var rowProj = document.createElement("div");
+    rowProj.className = "server-row";
+    rowProj.innerHTML = '<span class="server-label">Project</span>' +
+      '<input class="server-project-input" id="server-project-url" type="url" ' +
+      'placeholder="https://flow.google.com/project/..." spellcheck="false" />';
 
     /* Toggle row */
     var row2 = document.createElement("div");
@@ -162,8 +157,8 @@
       '<button class="server-refresh-btn" id="server-refresh-btn">⟳ Refresh</button></div>' +
       '<div id="server-task-list"></div>';
 
-    container.appendChild(banner);
     container.appendChild(row1);
+    container.appendChild(rowProj);
     container.appendChild(row2);
     container.appendChild(row3);
     container.appendChild(queue);
@@ -206,6 +201,23 @@
         });
       }
     });
+
+    var projInput = document.getElementById("server-project-url");
+    if (projInput) {
+      chrome.storage.local.get(PROJECT_URL_KEY, function (stored) {
+        if (stored && stored[PROJECT_URL_KEY]) projInput.value = stored[PROJECT_URL_KEY];
+      });
+      var saveProject = function () {
+        var v = (projInput.value || "").trim();
+        if (!/^https:\/\/flow\.google\.com\/project\/[0-9a-f-]+/i.test(v)) return;
+        chrome.storage.local.set({ [PROJECT_URL_KEY]: v }, function () {
+          projInput.classList.add("saved");
+          setTimeout(function () { projInput.classList.remove("saved"); }, 900);
+        });
+      };
+      projInput.addEventListener("change", saveProject);
+      projInput.addEventListener("blur", saveProject);
+    }
 
     var copyBtn = document.getElementById("server-copy-btn");
     if (copyBtn) {
@@ -277,17 +289,21 @@
     injectAttempts++;
 
     var anchor = findSettingsAnchor();
-    if (!anchor) {
-      pollTimer = setTimeout(inject, 500);
+    injectStyles();
+
+    /* findSettingsAnchor only matches while Vue's settings dialog is open, so anchoring
+       there meant the whole panel -- including the close button -- never appeared.
+       Fall back to body so the UI exists regardless of dialog state. */
+    if (anchor) {
+      anchor.insertBefore(createUI(), anchor.firstChild);
+    } else if (!injected) {
+      document.body.appendChild(createUI());
+    } else {
       return;
     }
-
-    injectStyles();
-    anchor.insertBefore(createUI(), anchor.firstChild);
     injected = true;
 
     setTimeout(bindEvents, 50);
-    startBannerPolling();
 
     chrome.runtime.sendMessage({ type: "SERVER_STATUS" }, function (resp) {
       if (resp) {

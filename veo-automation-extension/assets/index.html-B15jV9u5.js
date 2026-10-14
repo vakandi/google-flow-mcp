@@ -862,7 +862,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -5747,7 +5747,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -10566,7 +10566,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -15421,7 +15421,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -20285,7 +20285,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -25149,7 +25149,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -30013,7 +30013,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -34847,7 +34847,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -39687,7 +39687,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -44551,7 +44551,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -49376,7 +49376,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -54204,7 +54204,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -59065,7 +59065,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -63929,7 +63929,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -68835,7 +68835,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -73681,7 +73681,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -78539,7 +78539,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -83352,7 +83352,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -88174,7 +88174,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -93014,7 +93014,7 @@ const i = o({}, {
             i: [{
               t: 3
             }],
-            s: "kylenguyen.me"
+            s: "@vakandi"
           }
         },
         authorPrefix: {
@@ -107433,14 +107433,7 @@ const md = ua({
     return (t, e) => {
       const n = Fa("PButton");
       is();
-      return ls("div", cd, [ms("div", dd, [e[0] ||= ms("i", {
-        class: "pi pi-exclamation-circle text-5xl text-yellow-500 block mb-4"
-      }, null, -1), ms("p", ud, In(t.$t("notOnFlowOverlay.title")), 1), ms("p", pd, In(t.$t("notOnFlowOverlay.description")), 1), ms("div", bd, [gs(n, {
-        label: t.$t("notOnFlowOverlay.button"),
-        icon: "pi pi-external-link",
-        severity: "warning",
-        onClick: i
-      }, null, 8, ["label"])])])]);
+      return "";
     };
   }
 });
@@ -138413,7 +138406,7 @@ const LI = ua({
         active: true,
         currentWindow: true
       });
-      if (t?.id && t.url?.includes("labs.google")) {
+      if (t?.id && (t.url?.includes("labs.google") || t.url?.includes("flow.google.com"))) {
         a.value = true;
         try {
           const e = await chrome.runtime.sendMessage({
@@ -139292,7 +139285,7 @@ const qA = {
   class: "font-medium"
 };
 const YA = {
-  href: "https://kylenguyen.me",
+  href: "https://github.com/vakandi",
   target: "_blank",
   rel: "noopener noreferrer",
   class: "inline-flex items-center gap-1 text-primary hover:underline font-semibold"
@@ -139307,7 +139300,7 @@ const ZA = {
 const QA = ua({
   __name: "index",
   setup(n) {
-    const o = "3.1.9";
+    const o = "4.0";
     const {
       showLoginModal: i
     } = ld();
@@ -139336,7 +139329,7 @@ const QA = ua({
           if (!t?.url) {
             return false;
           }
-          const e = t.url.includes("labs.google") && t.url.includes("flow");
+          const e = (t.url.includes("labs.google") || t.url.includes("flow.google.com")) && t.url.includes("flow");
           if (nd !== e) {
             Qc.value = e;
             nd = e;
@@ -139360,7 +139353,7 @@ const QA = ua({
               window.open(e, "_blank", "noopener");
               return;
             }
-            const n = (await chrome.tabs.query({})).find(t => t.url && t.url.includes("labs.google") && t.url.includes("flow"));
+            const n = (await chrome.tabs.query({})).find(t => t.url && (t.url.includes("labs.google") || t.url.includes("flow.google.com")) && t.url.includes("flow"));
             if (n && n.id) {
               await chrome.tabs.update(n.id, {
                 active: true

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flow Automation</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="head">
+      <h1>Flow Automation</h1>
+      <span class="ver" id="ver">4.0</span>
+    </header>
+
+    <div class="row">
+      <span class="label">Server</span>
+      <button class="toggle" id="toggle" aria-label="Start/Stop Server"></button>
+    </div>
+
+    <div class="row">
+      <span class="label">Status</span>
+      <span class="status" id="status">
+        <span class="dot" id="dot"></span>
+        <span id="status-text">Unknown</span>
+      </span>
+    </div>
+
+    <div class="row">
+      <span class="label">Endpoint</span>
+      <span class="url" id="url">http://127.0.0.1:9876</span>
+    </div>
+
+    <section class="tasks">
+      <div class="tasks-head">
+        <span>Active Tasks</span>
+        <button class="mini" id="refresh">⟳ Refresh</button>
+      </div>
+      <div id="task-list"><div class="empty">No tasks</div></div>
+    </section>
+
+    <button class="open-side" id="open-side">Open side panel</button>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

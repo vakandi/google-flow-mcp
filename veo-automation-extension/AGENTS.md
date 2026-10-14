@@ -16,6 +16,7 @@ veo-automation-extension/
 │   └── remoteConfig-CbIdrXch.js   # External config fetcher
 ├── src/
 │   ├── ui/side-panel/index.html   # Side panel entry
+│   ├── ui/popup/popup.html        # Toolbar popup entry (+ popup.css, popup.js)
 │   └── assets/logo.png            # Extension icon
 └── logo/                          # Chrome + Edge SVG logos
 ```
@@ -27,9 +28,39 @@ veo-automation-extension/
 | Content script | `assets/index.ts-Bt6B9Lbt.js` | Form fill, auto-fill flow, gen monitoring |
 | Side panel UI | `assets/index.html-B15jV9u5.js` | Vue 3 SPA with PrimeVue components |
 | Server panel (bolt-on) | `assets/server-panel.js` | Standalone DOM injection (not part of Vue app) |
+| Toolbar popup | `src/ui/popup/popup.{html,css,js}` | Primary UI: server toggle, health, task list, open-side-panel button |
 | Permissions/entry points | `manifest.json` | `debugger`, `cookies`, host perms |
 | File upload intercept | `assets/catchUploadFile.ts-DJwIizxX.js` | Monkey-patches `HTMLInputElement` |
 | Remote config | `assets/remoteConfig-CbIdrXch.js` | Fetches selectors from CDN |
+
+The popup talks to the worker only through existing messages — `SERVER_STATUS`,
+`SERVER_START`, `SERVER_STOP`, `QUEUE_GET`. Add UI, never a new message type, unless the
+worker genuinely needs new data. Its "Open side panel" button calls
+`chrome.sidePanel.open()` and falls back to `chrome.tabs.create()` on the same URL, because
+`sidePanel.open()` rejects when it loses the user-gesture context.
+
+MV3 CSP is strict here: the popup uses an external `popup.js` and `addEventListener` only.
+No inline `<script>`, no `onclick=`, no `eval` — each of those silently kills the popup.
+
+## Running tasks: the Flow tab MUST be brought to the front
+
+The worker **does** focus the Flow window, and that is deliberate. Google throttles a background
+tab, so a queued task simply never starts: it sits in `processing` until the user manually
+clicks the Flow tab. Verified on 2026-10-13 — with focus suppressed, tasks stalled indefinitely.
+
+`focusTab()` therefore brings the tab forward:
+
+- Reuse the Flow tab that is already open (exact project URL first, any Flow tab second); only
+  create a tab when none exists.
+- `chrome.windows.update(winId, {focused:true})` when the tab's window is not focused, then
+  `chrome.tabs.update(tabId, {active:true})` when the tab is not active.
+- The window check must run **before** any early return on `tab.active`. An active tab inside a
+  background window is still throttled; returning early on `tab.active` was a real bug that left
+  tasks hanging forever.
+
+The trade-off is accepted knowingly: starting a task steals the user's screen. Anything that
+hides the tab from the site's own activity detection is deliberately **not** here — that belongs
+to the separate extension the user runs for it.
 
 ## CONVENTIONS (extension-specific)
 - **Bundle naming**: `{sourceExt}-{contentHash}.js` (Vite content-hash). NOT built in-repo.

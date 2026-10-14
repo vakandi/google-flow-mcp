@@ -6631,6 +6631,15 @@
         data: e
       }).catch(() => {});
     } catch (t) {}
+    // Not a duplicate of the sendMessage above: this is the only sink readable without Edge devtools.
+    try {
+      fetch("http://localhost:9876/api/log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: e?.level, message: e?.message, ts: e?.timestamp }),
+        keepalive: true
+      }).catch(() => {});
+    } catch (t) {}
   };
   const k = e => e.map(e => typeof e == "string" ? e : e instanceof Error ? e.message : JSON.stringify(e)).join(" ");
   const S = (...e) => {
@@ -6828,10 +6837,13 @@
           }
         }
       }
+      _veoRetryDone = false;
+      flowBaselineTokens = flowSnapshotTokens();
+      S(`📸 Grid baseline: ${flowBaselineTokens.size} existing tile(s)`);
       if (e.images && e.images.length > 0) {
         for (let r = 0; r < e.images.length; r++) {
           S(`Uploading image ${r + 1}/${e.images.length}: ${e.images[r].name}...`);
-          if (await M(e, r, n, t)) {
+          if (await M(e, r)) {
             S(`\u2705 Image ${r + 1} uploaded successfully`);
           } else {
             A(`\u26a0\ufe0f Failed to upload image ${r + 1}, but continuing...`);
@@ -6894,7 +6906,7 @@
         };
       } else {
         r[3].status = "error";
-        r[3].error = "Could not find tile IDs";
+        r[3].error = o.error || "Could not find tile IDs";
         return {
           success: false,
           steps: r,
@@ -6957,7 +6969,7 @@
     }
     return i(s).length > 0 && (S(`\u2705 First item contains "${a}"`), await w(`${s} img`, `Select character "${a}"`), true);
   };
-  const M = async (e, t, n, r) => {
+  const __M_OLD__ = async (e, t, n, r) => {
     const o = n.selectors;
     if (i(o.addImageButton).length === 0) {
       A("Ignore upload single image because no add image button found");
@@ -7057,6 +7069,65 @@
       document.documentElement.removeAttribute("data-veo-active");
     }
   };
+  // Reference upload state. Keyed by asset name: a boolean cannot tell "already pasted this task"
+  // from "brand new page", because the worker reloads the Flow tab before every task.
+  let __veoRef = null; // { name, pasted }
+
+  function flowAssetPane() {
+    return [...document.querySelectorAll(".cdk-overlay-pane")]
+      .find(pane => pane.querySelector("button.detail-add-to-prompt")) || null;
+  }
+
+  function flowCloseAssetPane() {
+    const pane = flowAssetPane();
+    if (!pane) return false;
+    const cancel = pane.querySelector('button[aria-label="Cancel"], button[aria-label="Close"]')
+      || document.querySelector(".cdk-overlay-backdrop");
+    (cancel || pane).click();
+    return true;
+  }
+
+  const M = async (e, t) => {
+    // Flow's remote-config addImageButton/uploadMediaButton selectors no longer match the app and
+    // walk it to /character; the project also renders zero input[type=file], so the file-input
+    // hijack never fires. The prompt editor is the only surface that takes an image.
+    const el = e.images?.[t];
+    if (!el || !el.base64) {
+      A("No image base64 provided");
+      return false;
+    }
+    const name = el.name || "reference.png";
+    if (__veoRef && __veoRef.name === name) {
+      S("Reference image already pasted for this task, skipping duplicate");
+      return true;
+    }
+    // A picker left open by an earlier attempt re-opens over the composer on every retry.
+    flowCloseAssetPane();
+
+    const pm = document.querySelector(".ProseMirror");
+    if (!pm) {
+      A("Prompt field (.ProseMirror) not found, cannot paste reference image");
+      return false;
+    }
+    try {
+      const bin = atob(el.base64);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      const file = new File([buf], name, { type: /\.png$/i.test(name) ? "image/png" : "image/jpeg" });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      pm.focus();
+      __veoRef = { name, pasted: true };
+      pm.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      S(`\u2705 Reference ${name} pasted once, uploading in background`);
+      return true;
+    } catch (err) {
+      __veoRef = null;
+      A("Paste of reference image failed: " + String(err && err.message ? err.message : err));
+      return false;
+    }
+  };
+
   let R = false;
   const O = async e => {
     if (!e) {
@@ -7097,10 +7168,10 @@
       }
       if (C([["aspectRatio", e.aspectRatio]], true)) {
         S(`Looking for aspect ratio: ${e.aspectRatio}`);
-        const t = r.aspectRatioTemplate.replace("{aspectRatio}", e.aspectRatio.replace(":", "_"));
-        const n = await v(t);
-        if (n && n.length > 0) {
-          await w(t, `Aspect ratio option: ${e.aspectRatio}`);
+const t = r.aspectRatioTemplate.replace("{aspectRatio}", e.aspectRatio);
+         const n = await v(t);
+         if (n && n.length > 0) {
+           await w(t, `Aspect ratio option: ${e.aspectRatio}`);
         } else {
           A(`\u26a0\ufe0f Could not find aspect ratio option: ${e.aspectRatio}`);
         }
@@ -7108,7 +7179,7 @@
       if (C([["outputCount", e.outputCount]], true)) {
         const t = e.outputCount;
         S(`Looking for video count: ${t}`);
-        const n = r.outputCountTemplate.replace("{outputCount}", t > 1 ? `x${t}` : "1x");
+        const n = r.outputCountTemplate.replace("{outputCount}", `x${t}`);
         const o = await v(n);
         if (o && o.length > 0) {
           await w(n, `Video count option: ${t}`);
@@ -7202,7 +7273,7 @@
         }
         if (C([["aspectRatio", e.aspectRatio]], true)) {
           S(`Looking for aspect ratio: ${e.aspectRatio}`);
-          const t = r.aspectRatioTemplate.replace("{aspectRatio}", e.aspectRatio.replace(":", "_"));
+          const t = r.aspectRatioTemplate.replace("{aspectRatio}", e.aspectRatio);
           const n = await v(t);
           if (n && n.length > 0) {
             await w(t, `Aspect ratio option: ${e.aspectRatio}`);
@@ -7213,7 +7284,7 @@
         if (C([["outputCount", e.outputCount]], true)) {
           const t = e.outputCount;
           S(`Looking for image count: ${t}`);
-          const n = r.outputCountTemplate.replace("{outputCount}", t > 1 ? `x${t}` : "1x");
+          const n = r.outputCountTemplate.replace("{outputCount}", `x${t}`);
           const o = await v(n);
           if (o && o.length > 0) {
             await w(n, `Image count option: ${t}`);
@@ -7271,6 +7342,12 @@
     }
   };
   const q = async (e, t) => {
+    if (__veoRef) {
+      // The reference is bound by the paste in M(); this path drives Flow's mention menu, whose
+      // sortOptionsButton no longer renders, so it threw before the prompt was ever typed.
+      S("Reference already bound by the paste, skipping the @ mention");
+      return true;
+    }
     const n = e.replace(/\.[^/.]+$/, "");
     S(`\ud83c\udfaf Selecting reference image via @ mention: ${n}`);
     const r = t.selectors;
@@ -7457,16 +7534,17 @@
       }
       S(`\u270d\ufe0f  Filled prompt: ${e.prompt.substring(0, 50)}...`);
       await p(1000, true);
+      if (!flowEnsurePromptInserted(n.promptTextarea, e.prompt)) {
+        return false;
+      }
+      await p(500, true);
       const o = await v(n.submitButton);
       if (!o || o.length === 0) {
         A("Could not find submit button");
         return false;
       }
-      if (Math.random() < 0.2) {
-        await w(n.submitButton, "Submit button");
-      } else {
-        await h("Enter", "Enter", 13);
-      }
+      await flowWaitForReferenceUpload();
+      await flowTrustedClickSubmit(n.submitButton);
       if (e.outputPreviousPrompt?.tileIds && e.outputPreviousPrompt.tileIds.length > 0) {
         const e = i(n.downloadDoneButton);
         if (e && e.length > 0) {
@@ -7492,6 +7570,8 @@
       return false;
     }
   };
+  // One flow-grid-tile-container per media tile. .tile-row is a grid row holding several tiles,
+  // and a row that mixes old and new media always counts as old, so a fresh tile was never seen.
   const FLOW_TILE_SEL = "flow-grid-tile-container";
   let flowBaselineTokens = null;
 
@@ -7500,12 +7580,22 @@
   }
 
   function flowTileTokens(tile) {
+    // Must key on data-media-id, never on the /asb/ src token. Flow renders the grid
+    // through cdk-virtual-scroll, which recycles tile nodes; a recycled old asset gets a
+    // fresh-looking src and reads as new, so the diff would match stale media. The
+    // TypeScript source is not in this repo, so this invariant is recorded here.
     const out = [];
-    tile.querySelectorAll("img.image, img.thumbnail, video").forEach(el => {
-      const s = el.currentSrc || el.src || "";
-      const m = s.match(/\/asb\/([^=?]+)/);
-      if (m) out.push(m[1]);
+    tile.querySelectorAll("[data-media-id]").forEach(el => {
+      const id = el.getAttribute("data-media-id");
+      if (id) out.push(id);
     });
+    if (out.length === 0) {
+      tile.querySelectorAll("img.image, img.thumbnail, video").forEach(el => {
+        const s = el.currentSrc || el.src || "";
+        const m = s.match(/\/asb\/([^=?]+)/);
+        if (m) out.push(m[1]);
+      });
+    }
     return out;
   }
 
@@ -7514,6 +7604,9 @@
     document.querySelectorAll(FLOW_TILE_SEL).forEach(tile => {
       flowTileTokens(tile).forEach(tok => set.add(tok));
     });
+    // An error card carries no media token, so it would read as brand new on every later run and
+    // trigger a retry that belongs to nobody. Marking it here ties it to the baseline.
+    document.querySelectorAll("flow-error-tile").forEach(t => t.setAttribute("data-veo-seen", "1"));
     return set;
   }
 
@@ -7534,17 +7627,121 @@
       tile.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
       tile.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
       const handle = tile.querySelector("flow-tile-hover-footer .footer-left") || tile.querySelector(".footer-left") || tile.querySelector("img.thumbnail") || tile;
-      handle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-      handle.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-      handle.click();
-      await p(700);
+      if (!await flowTrustedClickSubmit(handle, 2)) continue;
+      await p(1200);
       v = tile.querySelector("video[src]");
       if (v && v.src) return v.src;
     }
+    A("Could not reveal a <video> element for a tile after 12 trusted-click attempts");
     return null;
   }
 
-  function flowQualityItag(quality) {
+  // Grid thumbnails carry a "=s512-rw" resize suffix; dropping it yields the original
+// (~83KB vs ~46KB measured). Leaving it in silently downgrades every download.
+function flowFullRes(url) {
+    return url.replace(/=s\d+-[a-z]+$/i, "");
+  }
+
+  // Flow's prompt box is a ProseMirror editor. Key events dispatched through the debugger are
+// sometimes dropped there even though the editor reports focus, and the failure is silent: the
+// submit button stays disabled and the task ends with nothing generated. So confirm the text
+// actually arrived, and fall back to execCommand('insertText') — the one insertion method proven
+// to reach this editor — when it did not.
+function flowEnsurePromptInserted(selector, text) {
+  const el = document.querySelector(selector);
+  if (!el) return false;
+  const current = (el.innerText || "").trim();
+  if (current.length > 0) return true;
+  el.focus();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  document.execCommand("insertText", false, text);
+  const landed = (el.innerText || "").trim();
+  if (landed.length > 0) {
+    S(`✅ Prompt inserted via execCommand fallback (${landed.length} chars)`);
+    return true;
+  }
+  A("Prompt text did not reach the editor by either method");
+  return false;
+}
+
+// Resolve a selector to viewport-centre coordinates, or null when the element is absent,
+// hidden, not yet enabled, or outside the viewport — a click at an unreachable point is wasted.
+function flowBtnRect(target) {
+  const el = typeof target === "string" ? document.querySelector(target) : target;
+  if (!el) return null;
+  if (el.disabled || el.getAttribute("aria-disabled") === "true") return null;
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  el.scrollIntoView({ block: "center" });
+  const r2 = el.getBoundingClientRect();
+  const x = Math.round(r2.left + r2.width / 2);
+  const y = Math.round(r2.top + r2.height / 2);
+  if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return null;
+  return { x, y };
+}
+
+// Flow's Generate button is an Angular Material control that ignores synthetic DOM clicks and
+// Enter keypresses — verified on the live project page: el.click() and dispatchEvent both leave
+// the editor untouched. Only a real OS-level mouse event at the element's viewport coordinates
+// submits. Ported from the working personal-browser reproduction.
+// Flow rejects a generation in place rather than dropping a tile: the card shows "Sorry, this
+// image failed to generate." and nothing in the grid ever changes, so a tile wait cannot tell
+// a dead run from a slow one.
+let _veoRetryDone = false;
+
+// Flow serves uploads from /image/<uuid> and generated media from /asb/<opaque>, so the reference
+// is the new tile carrying an /image/ src. Submitting before it lands is what makes Flow answer
+// "Sorry, this image failed to generate".
+async function flowWaitForReferenceUpload() {
+  if (!__veoRef) return true;
+  for (let i = 0; i < 240; i++) {
+    if (flowNewTiles().some(t => t.querySelector('img[src*="/image/"]'))) {
+      S("✅ Reference upload landed in the grid");
+      return true;
+    }
+    await p(500);
+  }
+  A("⚠️ Reference upload never landed in the grid");
+  return false;
+}
+
+function flowFreshErrorTile() {
+  return flowNewTiles()
+    .map(t => t.querySelector("flow-error-tile"))
+    .find(t => t && !t.hasAttribute("data-veo-seen")) || null;
+}
+
+function flowErrorText(tile) {
+  const el = tile.querySelector(".error-message-text, .error-subtitle, .error-title");
+  return (el?.textContent || "Flow reported a generation failure").replace(/\s+/g, " ").trim().slice(0, 300);
+}
+
+async function flowTrustedClickSubmit(target, attempts = 20) {
+  const label = typeof target === "string" ? target : (target?.tagName || "element").toLowerCase();
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    await p(500);
+    const rect = await flowBtnRect(target);
+    if (!rect) continue;
+    const res = await chrome.runtime.sendMessage({
+      type: "TRUSTED_CLICK",
+      x: rect.x,
+      y: rect.y
+    }).catch(() => null);
+    if (res?.success) {
+      S(`✅ Trusted click dispatched on ${label}`);
+      return true;
+    }
+  }
+  A(`Trusted click on ${label} failed after ${attempts} attempts`);
+  return false;
+}
+
+function flowQualityItag(quality) {
     return { "1080": "37", "2k": "37", "4k": "37", "720": "22", "480": "18" }[quality] || "22";
   }
 
@@ -7556,10 +7753,26 @@
   async function flowCollect(t, cancel) {
     const wanted = Math.max(1, t.outputCount || 1);
     let tiles = [];
+    let retried = false;
     for (let attempt = 0; attempt < 300; attempt++) {
       if (cancel && cancel()) return { success: false, cancelled: true };
-      tiles = flowNewTiles().filter(tile => tile.querySelector("img.image, img.thumbnail, video"));
+      tiles = flowNewTiles().filter(tile => !tile.querySelector("flow-pending-tile, .loading-percentage") && (tile.querySelector("[data-media-id]") || tile.querySelector("video[src]") || tile.querySelector("flow-video-tile")));
       if (tiles.length >= wanted) break;
+      const errTile = flowFreshErrorTile();
+      if (errTile) {
+        const msg = flowErrorText(errTile);
+        const retry = errTile.querySelector('button[aria-label="Retry"]');
+        if (!retried && retry) {
+          retried = true;
+          await chrome.runtime.sendMessage({ type: "FOCUS_FLOW_TAB" }).catch(() => {});
+          await p(1200);
+          A(`\u267b\ufe0f Flow refused the generation, clicking Retry: ${msg}`);
+          await flowTrustedClickSubmit(retry, 4);
+          continue;
+        }
+        A(`\u274c Flow rejected the generation: ${msg}`);
+        return { success: false, error: msg };
+      }
       await p(2000);
     }
     tiles = tiles.slice(0, wanted);
@@ -7580,7 +7793,7 @@
       }
       if (!url) {
         const el = tile.querySelector("img.image, video[src]");
-        if (el) url = el.currentSrc || el.src || null;
+        if (el) url = flowFullRes(el.currentSrc || el.src || "");
       }
       if (!url) {
         A(`⚠️ Tile ${k + 1} for prompt ${t.promptIndex} exposed no media URL`);
@@ -7629,6 +7842,20 @@
             success: true,
             tileIds: e
           };
+        }
+        const errTile = flowFreshErrorTile();
+        if (errTile) {
+          const msg = flowErrorText(errTile);
+          const retry = errTile.querySelector('button[aria-label="Retry"]');
+          if (!_veoRetryDone && retry) {
+            _veoRetryDone = true;
+            await chrome.runtime.sendMessage({ type: "FOCUS_FLOW_TAB" }).catch(() => {});
+            await p(1200);
+            A(`\u267b\ufe0f Flow refused the generation, clicking Retry: ${msg}`);
+            await flowTrustedClickSubmit(retry, 4);
+            continue;
+          }
+          return { success: false, tileIds: [], error: msg };
         }
         S(`\u23f3 Waiting for tiles... attempt ${o + 1}/${a}`);
         o++;
@@ -8103,6 +8330,9 @@
         const u = await $(s, () => !!e.isCancelling, t);
         console.log("[CS] X() $() returned:", u.success, "tileIds:", u.tileIds?.length || 0, "error:", u.error || "none");
         e.currentPromptIndex = undefined;
+        if (u.success && isAngularFlow()) {
+          await U([], { ...s, promptIndex: s.promptIndex ?? i, _downloadRef: e.id }, () => !!e.isCancelling, null);
+        }
         if (!u.success && !u.cancelled) {
           if (o < (s.maxRetries ?? 5)) {
             e.currentPromptIndex = undefined;
@@ -8292,6 +8522,7 @@
       return;
     }
     let _processedGenIndexes = new Set();
+    let _genAttempts = {};
     let _loopIter = 0;
     while (true) {
       _loopIter++;
@@ -8320,17 +8551,22 @@
       }
       if (e.pendingIndexes.length > 0) {
         const idx = e.pendingIndexes[0];
-        if (_processedGenIndexes.has(idx)) {
+        const settled = (e.completedPromptIndexes || new Set()).has(idx);
+        const attempts = (_genAttempts[idx] || 0) + 1;
+        _genAttempts[idx] = attempts;
+        if (settled || attempts > 3) {
           e.pendingIndexes.shift();
           e.processedCount = Math.min(e.processedCount + 1, e.totalCount);
-          e.completedPromptIndexes.add(idx);
-          e.results.push({
-            index: idx,
-            promptIndex: e.payloads[idx]?.promptIndex ?? idx,
-            success: false,
-            downloadComplete: true,
-            error: "Download failed after generation"
-          });
+          if (!settled) {
+            e.results.push({
+              index: idx,
+              promptIndex: e.payloads[idx]?.promptIndex ?? idx,
+              success: false,
+              downloadComplete: true,
+              error: "Download failed after generation"
+            });
+            e.completedPromptIndexes.add(idx);
+          }
           _processedGenIndexes.delete(idx);
           re(e);
         } else {
@@ -8340,6 +8576,7 @@
             n.push(X(e, t, ee, re).catch(e => {}));
           }
           await Promise.all(n);
+          await K(3000);
         }
       }
       while (ee.some(t => t.id === e.id)) {
@@ -8375,7 +8612,7 @@
     }).catch(() => {});
   } catch {}
   self.onerror = function (e, t, n, r, o) {};
-  if (window.location.href.includes("labs.google")) {
+  if (window.location.href.includes("labs.google") || window.location.href.includes("flow.google.com")) {
     chrome.runtime.sendMessage({
       type: "SET_ZOOM",
       zoomFactor: 0.8
@@ -8537,7 +8774,7 @@
         return true;
       case "CHECK_FLOW_PAGE":
         n({
-          isFlowPage: window.location.href.includes("labs.google") && window.location.href.includes("flow")
+          isFlowPage: (window.location.href.includes("labs.google") || window.location.href.includes("flow.google.com")) && window.location.href.includes("flow")
         });
         return true;
       case "SCAN_CHARACTERS":

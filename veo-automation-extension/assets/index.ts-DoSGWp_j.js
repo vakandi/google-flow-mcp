@@ -9,8 +9,13 @@ const n = new Set();
 // ── Server Mode State ──────────────────────────────────────
 let serverPollTimer = null;
 let processingTaskId = null;
+let taskDeadlineTimer = null;
+const TASK_DEADLINE_MS = 8 * 60 * 1000;
 let lastProcessedTaskId = null;
-const SERVER_URL = "http://localhost:9876";
+// Literal loopback IP, not "localhost": on macOS localhost also resolves to ::1, but the
+// server binds IPv4 only, so a client that prefers IPv6 gets connection-refused. Curl falls
+// back silently; the browser is not obliged to, which strands queued tasks at "pending".
+const SERVER_URL = "http://127.0.0.1:9876";
 
 // ── Google Flow location ───────────────────────────────────
 // labs.google.com/fx/tools/flow is a hard 404; Flow now lives on flow.google.com.
@@ -57,7 +62,32 @@ async function serverFetch(path, opts = {}) {
     if (!res.ok) return null;
     return await res.json();
   } catch (e) {
+    // Swallowing this made every network failure look identical to "no work", which is how a
+    // missing host permission hid for hours. Surface it in the service worker console.
+    console.log(`[SW] ${path} failed:`, e && e.message ? e.message : String(e));
     return null;
+  }
+}
+
+async function focusTab(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const win = await chrome.windows.get(tab.windowId);
+
+    // The window must be focused even when the tab is already active: an active tab in a
+    // background window is still throttled by Chrome, so the task would stall forever.
+    if (!win.focused) {
+      await chrome.windows.update(tab.windowId, { focused: true });
+    }
+    if (!tab.active) {
+      await chrome.tabs.update(tabId, { active: true });
+    }
+    return true;
+  } catch (e) {
+    console.log("[SW] focusTab failed:", tabId, String(e));
+
+    return false;
+
   }
 }
 
@@ -65,23 +95,58 @@ async function processTask(task) {
   if (!task || task.empty || processingTaskId) return;
   if (task.id === lastProcessedTaskId) return;
   processingTaskId = task.id;
+  // A task with no terminal status from the content script leaves every wait=true caller
+  // hanging forever, so the run is closed from this side after TASK_DEADLINE_MS.
+  clearTimeout(taskDeadlineTimer);
+  taskDeadlineTimer = setTimeout(async () => {
+    if (processingTaskId !== task.id) return;
+    console.log("[SW] deadline hit for", task.id, "- reporting failure");
+    processingTaskId = null;
+    await serverFetch("/api/result", {
+      method: "POST",
+      body: JSON.stringify({
+        task_id: task.id,
+        status: "failed",
+        error: "Flow produced no image and the automation never reported back within " + Math.round(TASK_DEADLINE_MS / 60000) + " min."
+      })
+    });
+  }, TASK_DEADLINE_MS);
+  const PROJECT_URL_KEY = "flowProjectUrl";
+  async function getTargetProjectUrl() {
+    const stored = await chrome.storage.local.get(PROJECT_URL_KEY);
+    const url = stored && stored[PROJECT_URL_KEY];
+    return typeof url === "string" && /^https:\/\/flow\.google\.com\/project\/[0-9a-f-]+/i.test(url.trim()) ? url.trim() : FLOW_URL;
+  }
   let tabs = (await chrome.tabs.query({ url: FLOW_TAB_PATTERNS })).filter(t => t.url && t.url.includes("flow.google.com"));
-  if (tabs.length === 0) tabs = [await chrome.tabs.create({ url: FLOW_URL })];
+  const projectUrl = await getTargetProjectUrl();
+  const onTarget = tabs.filter(t => t.url.replace(/\/+$/, "") === projectUrl.replace(/\/+$/, ""));
+  if (onTarget.length > 0) tabs = onTarget;
+  else if (tabs.length > 0) { await chrome.tabs.update(tabs[0].id, { url: projectUrl }); tabs = [tabs[0]]; }
+  else tabs = [await chrome.tabs.create({ url: projectUrl, active: false })];
   const tabId = tabs[0].id;
   try {
+    // Force the Flow tab to the front. Google throttles a background tab, so a task makes no
+    // progress until the tab is actually visible; running quietly is not an option here.
+    await focusTab(tabId);
     await chrome.tabs.reload(tabId);
     await new Promise(r => {
       const handler = (tId, info) => { if (tId === tabId && info.status === 'complete') { chrome.tabs.onUpdated.removeListener(handler); r(); } };
       chrome.tabs.onUpdated.addListener(handler);
       setTimeout(r, 10000);
     });
+    await focusTab(tabId);
+
     try {
       await chrome.tabs.sendMessage(tabId, {
         type: "AUTO_FILL_FLOW",
         payloads: task.prompts.map(p => ({
+          taskId: task.id, promptIndex: task.prompts.indexOf(p),
           prompt: p, mode: task.mode, model: task.model, aspectRatio: task.aspectRatio,
           videoOption: task.videoOption, outputCount: task.outputCount,
-          characters: task.characters || [], speaker: task.speaker || null, images: task.images || []
+          characters: task.characters || [], speaker: task.speaker || null,
+          images: task.imageBase64
+            ? [{ base64: task.imageBase64, name: task.imageName || "reference.png" }]
+            : task.images || []
         })),
         groupId: task.id,
         concurrentPrompts: task.concurrentPrompts || 1,
@@ -104,27 +169,63 @@ async function processTask(task) {
 
 async function pollServer() {
   if (processingTaskId) return;
+  console.log("[SW] polling", SERVER_URL);
   const task = await serverFetch("/api/poll");
-  if (task && !task.empty) processTask(task);
+  if (task && !task.empty) {
+    console.log("[SW] got task", task.id, "mode", task.mode);
+    processTask(task);
+  }
 }
+
+const FLOW_POLL_ALARM = "flowServerPoll";
+
+chrome.alarms.onAlarm.addListener(a => {
+  if (a.name === FLOW_POLL_ALARM) pollServer();
+});
 
 function startServerMode() {
   if (serverPollTimer) return { success: true, url: SERVER_URL };
-  serverPollTimer = setInterval(pollServer, 10000);
+  // chrome.alarms, not setInterval: MV3 suspends the service worker after ~30s idle, which
+  // silently kills a setInterval and leaves the extension looking alive while it no longer
+  // picks up queued tasks. An alarm both survives suspension and wakes the worker to poll.
+  try {
+    chrome.alarms.create(FLOW_POLL_ALARM, { delayInMinutes: 0.1, periodInMinutes: 0.5 });
+  } catch (e) {
+    console.log("[SW] alarm create failed, falling back to interval:", String(e));
+    serverPollTimer = setInterval(pollServer, 10000);
+    return { success: true, url: SERVER_URL };
+  }
+  serverPollTimer = true;
+  pollServer();
   return { success: true, url: SERVER_URL };
 }
 
 function stopServerMode() {
-  if (serverPollTimer) {
-    clearInterval(serverPollTimer);
-    serverPollTimer = null;
-  }
+  try {
+    chrome.alarms.clear(FLOW_POLL_ALARM);
+  } catch (e) {}
+  if (typeof serverPollTimer === "number") clearInterval(serverPollTimer);
+  serverPollTimer = null;
   return { success: true };
 }
 
 function isServerRunning() {
   return serverPollTimer !== null;
 }
+
+const SERVER_MODE_KEY = "flowServerModeEnabled";
+// MV3 kills the service worker on idle, which tears down serverPollTimer. Re-arm on every
+// worker start so queued tasks are picked up without touching the toggle. Defaults to ON and
+// only stays off if the user explicitly turned it off.
+async function autoStartServerMode() {
+  try {
+    const stored = await chrome.storage.local.get(SERVER_MODE_KEY);
+    if (stored[SERVER_MODE_KEY] !== false) startServerMode();
+  } catch (e) {
+    startServerMode();
+  }
+}
+autoStartServerMode();
 
 chrome.tabs.onRemoved.addListener(e => {
   n.delete(e);
@@ -170,9 +271,9 @@ const i = async () => {
         path: "src/ui/side-panel/index.html",
         enabled: true
       });
-      await chrome.sidePanel.setPanelBehavior({
-        openPanelOnActionClick: true
-      });
+      // Chrome persists openPanelOnActionClick per profile: absence is NOT false, so this must
+      // be set explicitly or the toolbar icon keeps opening the side panel instead of default_popup.
+      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
     } catch (e) {}
   }
 };
@@ -263,7 +364,7 @@ chrome.runtime.onMessage.addListener((i, d, m) => {
           autoChangeFileName: s,
           _downloadRef: d
         } = i;
-        if (s !== false) {
+        if (!d && s !== false) {
           const s = a ? `${a}/${t}` : t;
           o.set(e, s);
           chrome.downloads.download({
@@ -280,7 +381,7 @@ chrome.runtime.onMessage.addListener((i, d, m) => {
               error: t?.message || "Failed to start download"
             });
           });
-        } else {
+        } else if (!d) {
           chrome.downloads.download({
             url: e,
             saveAs: false
@@ -373,6 +474,7 @@ chrome.runtime.onMessage.addListener((i, d, m) => {
             processingTaskId = null;
             (async () => {
               console.log("[SW] completed handler for", taskId, "resultUrls:", (e.resultUrls || []).length, "pending:", _pendingDownloadFiles.length);
+              let uploaded = 0;
               const urls = e.resultUrls || [];
               for (const url of urls) {
                 try {
@@ -390,6 +492,7 @@ chrome.runtime.onMessage.addListener((i, d, m) => {
                   const uploadResp = await fetch(`${SERVER_URL}/api/results/${taskId}/upload/${filename}`, {
                     method: "PUT", body: blob
                   });
+                  if (uploadResp.ok) uploaded++;
                   console.log("[SW] uploaded via resultUrl:", filename, uploadResp.status);
                 } catch (err) {
                   console.log("[SW] fetch/upload error:", err.message);
@@ -410,16 +513,38 @@ chrome.runtime.onMessage.addListener((i, d, m) => {
                   const uploadResp = await fetch(`${SERVER_URL}/api/results/${taskId}/upload/${encodeURIComponent(fn)}`, {
                     method: "PUT", body: b
                   });
+                  if (uploadResp.ok) uploaded++;
                   console.log("[SW] uploaded pending:", fn, uploadResp.status);
                 } catch (err) {
                   console.log("[SW] pending upload error:", err.message);
                 }
               }
+              let onServer = [];
+              try {
+                const seen = await fetch(`${SERVER_URL}/api/queue/${taskId}?probe=1`);
+                if (seen.ok) {
+                  const t2 = await seen.json();
+                  onServer = t2 && Array.isArray(t2.result_files) ? t2.result_files : [];
+                }
+              } catch (_) {}
+              const totalFiles = uploaded + onServer.length;
+              // A prompt Flow itself refused carries its own reason; the generic "nothing
+              // downloaded" text hides it and leaves the caller with nothing to retry on.
+              const flowReason = (Array.isArray(e.results) ? e.results : [])
+                .map(r => (r && r.success === false ? r.error : null))
+                .filter(Boolean)
+                .join(" | ");
               serverFetch("/api/result", {
                 method: "POST",
-                body: JSON.stringify({ task_id: taskId, status: "completed", progress: 100 })
+                body: JSON.stringify(totalFiles > 0
+                  ? { task_id: taskId, status: "completed", progress: 100 }
+                  : {
+                      task_id: taskId,
+                      status: "failed",
+                      error: flowReason || `Flow finished the prompt but nothing downloaded (${urls.length} result url(s), ${taskFiles.length} pending file(s), ${onServer.length} already on server). Open the Flow tab to see where it stopped.`
+                    })
               });
-              console.log("[SW] completed handler done for", taskId);
+              console.log("[SW] completed handler done for", taskId, "uploaded:", uploaded, "alreadyOnServer:", onServer.length);
             })();
           } else if (t === "error") {
             lastProcessedTaskId = taskId;
@@ -451,9 +576,11 @@ chrome.runtime.onMessage.addListener((i, d, m) => {
       }
       break;
     case "SERVER_START":
+      chrome.storage.local.set({ [SERVER_MODE_KEY]: true }).catch(() => {});
       m(startServerMode());
       break;
     case "SERVER_STOP":
+      chrome.storage.local.set({ [SERVER_MODE_KEY]: false }).catch(() => {});
       m(stopServerMode());
       break;
     case "SERVER_STATUS":
@@ -768,6 +895,69 @@ chrome.runtime.onMessage.addListener((i, d, m) => {
             m({
               success: false,
               error: e
+            });
+          }
+        })();
+        return true;
+      }
+    case "FOCUS_FLOW_TAB":
+      {
+        // Chrome throttles a background tab, so a generation that stalls until it is foregrounded
+        // never recovers on its own.
+        (async () => {
+          try {
+            const tabs = await chrome.tabs.query({ url: FLOW_TAB_PATTERNS });
+            if (tabs.length > 0 && typeof tabs[0].id === "number") {
+              await focusTab(tabs[0].id);
+              m({ success: true });
+            } else {
+              m({ success: false, error: "No Flow tab" });
+            }
+          } catch (err) {
+            m({ success: false, error: String(err) });
+          }
+        })();
+        return true;
+      }
+    case "TRUSTED_CLICK":
+      {
+        const {
+          x: e,
+          y: t
+        } = i;
+        const a = d.tab?.id;
+        if (!a) {
+          m({
+            success: false,
+            error: "No tab ID"
+          });
+          break;
+        }
+        const s = {
+          tabId: a
+        };
+        (async () => {
+          try {
+            if (!n.has(a)) {
+              await chrome.debugger.attach(s, "1.3");
+              n.add(a);
+            }
+            // Angular Material buttons ignore el.click() and synthetic MouseEvents; they only
+            // react to a genuine press/release pair, which CH's hover-only dispatch does not send.
+            await chrome.debugger.sendCommand(s, "Input.dispatchMouseEvent", {
+              type: "mouseMoved", x: e, y: t, button: "none", modifiers: 0
+            });
+            await chrome.debugger.sendCommand(s, "Input.dispatchMouseEvent", {
+              type: "mousePressed", x: e, y: t, button: "left", clickCount: 1, modifiers: 0
+            });
+            await chrome.debugger.sendCommand(s, "Input.dispatchMouseEvent", {
+              type: "mouseReleased", x: e, y: t, button: "left", clickCount: 1, modifiers: 0
+            });
+            m({ success: true });
+          } catch (o) {
+            m({
+              success: false,
+              error: o instanceof Error ? o.message : String(o)
             });
           }
         })();

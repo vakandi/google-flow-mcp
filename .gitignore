@@ -1,0 +1,23 @@
+# Compiled / generated
+__pycache__/
+*.py[cod]
+node_modules/
+
+# Local run artifacts
+results/
+.playwright-mcp/
+.sisyphus/
+.omo/
+
+# Screenshots at repo root
+insights_*.png
+
+# Store build: contains the Chrome extension SIGNING KEY and an update_url.
+# Publishing it lets anyone ship an update Chrome accepts as this extension.
+# Never commit this folder.
+veo-automation-extension-original/
+
+# Local secrets / env
+.env
+.env.*
+*.local.json
