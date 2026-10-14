@@ -56,7 +56,7 @@ The extension picks up your Flow project URL from the panel, so it works on any 
 **4. Add the MCP server** (optional — only for agent use)
 
 ```bash
-npx google-flow-mcp
+npx @vakandi/google-flow-mcp
 ```
 
 Register it with your client:
@@ -75,7 +75,7 @@ Register it with your client:
 For OpenCode or Claude Code:
 
 ```bash
-claude mcp add google-flow --scope user -- npx google-flow-mcp
+claude mcp add google-flow --scope user -- npx @vakandi/google-flow-mcp
 ```
 
 Check the wiring end to end:
