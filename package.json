@@ -21,7 +21,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vakandi/google-flow-mcp"
+    "url": "git+https://github.com/vakandi/google-flow-mcp.git"
   },
   "homepage": "https://github.com/vakandi/google-flow-mcp#readme",
   "bugs": {
