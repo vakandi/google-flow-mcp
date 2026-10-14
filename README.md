@@ -1,6 +1,20 @@
-# Google Studio Hack
+# @vakandi/google-flow-mcp
 
-Unlimited AI image and video generation on Google Flow — automated through a local REST API, a Chrome extension, and an MCP server.
+[![npm](https://img.shields.io/npm/v/@vakandi/google-flow-mcp.svg)](https://www.npmjs.com/package/@vakandi/google-flow-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/@vakandi/google-flow-mcp.svg)](https://www.npmjs.com/package/@vakandi/google-flow-mcp)
+[![license](https://img.shields.io/npm/l/@vakandi/google-flow-mcp.svg)](https://github.com/vakandi/google-flow-mcp/blob/main/LICENSE)
+
+MCP server for [Google Flow](https://labs.google/fx/tools/flow) — unlimited image and video generation, including image-to-image, driven through your own logged-in Chrome or Edge session. No API keys, no third-party proxy, no per-request billing on your side.
+
+Source, issues and full documentation: **[github.com/vakandi/google-flow-mcp](https://github.com/vakandi/google-flow-mcp)** · npm: **[@vakandi/google-flow-mcp](https://www.npmjs.com/package/@vakandi/google-flow-mcp)**
+
+```bash
+npx @vakandi/google-flow-mcp
+```
+
+---
+
+The generation happens in your browser, not in a server we run: the extension drives the real Flow page in your own logged-in session, waits for the result, downloads the file, and hands it back to your machine. That is what makes it unlimited — there is no metered API in the path, only the UI you already have access to.
 
 Instead of clicking through the Flow web UI one generation at a time, you queue a task over HTTP. The extension drives the real Flow page in your own logged-in browser session, waits for the result, downloads the file, and hands it back to your machine. No API keys, no third-party proxy, no per-request billing on your side.
 
@@ -66,7 +80,7 @@ Register it with your client:
   "mcpServers": {
     "google-flow": {
       "command": "npx",
-      "args": ["google-flow-mcp"]
+      "args": ["@vakandi/google-flow-mcp"]
     }
   }
 }
