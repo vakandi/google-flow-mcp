@@ -21,11 +21,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vakandi/google-studio-hack.git"
+    "url": "https://github.com/vakandi/google-flow-mcp.git"
   },
-  "homepage": "https://github.com/vakandi/google-studio-hack#readme",
+  "homepage": "https://github.com/vakandi/google-flow-mcp#readme",
   "bugs": {
-    "url": "https://github.com/vakandi/google-studio-hack/issues"
+    "url": "https://github.com/vakandi/google-flow-mcp/issues"
   },
   "engines": {
     "node": ">=18"

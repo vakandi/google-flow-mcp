@@ -37,7 +37,7 @@ Three pieces: a browser extension, a local server, and an MCP server for agent a
 Chrome/Edge → Extensions → Developer mode → Load unpacked
 ```
 
-Select the `veo-automation-extension/` folder from the [repository](https://github.com/vakandi/google-studio-hack).
+Select the `veo-automation-extension/` folder from the [repository](https://github.com/vakandi/google-flow-mcp).
 
 **2. Start the server**
 
