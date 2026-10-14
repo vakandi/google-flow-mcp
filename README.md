@@ -12,11 +12,27 @@ Source, issues and full documentation: **[github.com/vakandi/google-flow-mcp](ht
 npx @vakandi/google-flow-mcp
 ```
 
+Paste this into your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "google-flow": {
+      "command": "npx",
+      "args": ["@vakandi/google-flow-mcp@latest"],
+      "env": {
+        "FLOW_API_URL": "http://localhost:9876"
+      }
+    }
+  }
+}
+```
+
+`FLOW_API_URL` is optional — it defaults to `http://localhost:9876`, which is where `server.py` listens.
+
 ---
 
 The generation happens in your browser, not in a server we run: the extension drives the real Flow page in your own logged-in session, waits for the result, downloads the file, and hands it back to your machine. That is what makes it unlimited — there is no metered API in the path, only the UI you already have access to.
-
-Instead of clicking through the Flow web UI one generation at a time, you queue a task over HTTP. The extension drives the real Flow page in your own logged-in browser session, waits for the result, downloads the file, and hands it back to your machine. No API keys, no third-party proxy, no per-request billing on your side.
 
 ## What you get
 
@@ -80,7 +96,10 @@ Register it with your client:
   "mcpServers": {
     "google-flow": {
       "command": "npx",
-      "args": ["@vakandi/google-flow-mcp"]
+      "args": ["@vakandi/google-flow-mcp@latest"],
+      "env": {
+        "FLOW_API_URL": "http://localhost:9876"
+      }
     }
   }
 }
