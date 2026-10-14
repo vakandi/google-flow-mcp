@@ -34,7 +34,83 @@ function findPython() {
   return null;
 }
 
+function npmAccount() {
+  try {
+    return execSync("npm whoami", { encoding: "utf-8", timeout: 15000, stdio: ["pipe", "pipe", "pipe"] }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function runLogin() {
+  log("opening npm login — a legacy token cannot publish, so use a granular one");
+  log("create it at https://www.npmjs.com/settings/access-tokens (Packages: read & write)");
+  try {
+    execSync("npm login", { stdio: "inherit", timeout: 300000 });
+  } catch {
+    process.stderr.write("\nLogin did not complete.\n");
+    process.exit(1);
+  }
+  const who = npmAccount();
+  if (!who) {
+    process.stderr.write("\nStill not authenticated. npm publish will fail with E404.\n");
+    process.exit(1);
+  }
+  log(`logged in as ${who} — you can publish now`);
+}
+
+function runStatus() {
+  const python = findPython();
+  log(`python: ${python || "NOT FOUND (3.0+ required)"}`);
+  log(`npm account: ${npmAccount() || "not authenticated"}`);
+  const fs2 = require("fs");
+  const server = path.join(ROOT, "server.py");
+  log(`server.py: ${fs2.existsSync(server) ? "present" : "MISSING"}`);
+  try {
+    const http = require("http");
+    http
+      .get("http://localhost:9876/api/health", (res) => {
+        let b = "";
+        res.on("data", (c) => (b += c));
+        res.on("end", () => {
+          try {
+            const h = JSON.parse(b);
+            log(`local server: up, extension_connected=${h.extension_connected}`);
+          } catch {
+            log("local server: responded but not as JSON");
+          }
+        });
+      })
+      .on("error", () => log("local server: not running — start it with: python3 server.py"));
+  } catch {
+    log("local server: check failed");
+  }
+}
+
+function printHelp() {
+  process.stdout.write(
+    [
+      "google-flow-mcp — MCP server for Google Flow image and video generation",
+      "",
+      "Usage:",
+      "  npx google-flow-mcp            start the MCP server (stdio, for an MCP client)",
+      "  npx google-flow-mcp --login    authenticate with npm, then exit",
+      "  npx google-flow-mcp --status   check python, npm auth and the local server",
+      "  npx google-flow-mcp --help     this message",
+      "",
+      "The MCP server also needs the browser extension loaded and server.py running.",
+      "",
+    ].join("\n")
+  );
+}
+
 function main() {
+  const argv = process.argv.slice(2);
+  const flag = argv.find((a) => a.startsWith("--"));
+  if (flag === "--help" || flag === "-h") return printHelp();
+  if (flag === "--login") return runLogin();
+  if (flag === "--status") return runStatus();
+
   if (!fs.existsSync(PYTHON_SCRIPT)) {
     process.stderr.write(`Entry point missing: ${PYTHON_SCRIPT}\n`);
     process.exit(1);
@@ -50,7 +126,7 @@ function main() {
     log(`using ${python}, MCP server starting — Flow tools need the extension + server.py running`);
   }
 
-  const child = spawn(python, [PYTHON_SCRIPT, ...process.argv.slice(2)], {
+  const child = spawn(python, [PYTHON_SCRIPT, ...argv], {
     stdio: "inherit",
     cwd: ROOT,
     env: process.env,
