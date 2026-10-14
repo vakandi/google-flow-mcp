@@ -1,0 +1,50 @@
+{
+  "name": "google-flow-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Google Flow: generate images and video, including image-to-image, by driving your own logged-in Chrome/Edge session. No API keys.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "npx",
+    "google-flow",
+    "veo",
+    "nano-banana",
+    "image-generation",
+    "video-generation",
+    "image-to-image",
+    "claude-desktop",
+    "cursor",
+    "windsurf",
+    "opencode"
+  ],
+  "author": "Wael Bousfira",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vakandi/google-studio-hack.git"
+  },
+  "homepage": "https://github.com/vakandi/google-studio-hack#readme",
+  "bugs": {
+    "url": "https://github.com/vakandi/google-studio-hack/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "google-flow-mcp": "bin/google-flow-mcp"
+  },
+  "files": [
+    "bin/",
+    "postinstall.js",
+    "mcp_server.py",
+    "server.py",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node postinstall.js"
+  }
+}

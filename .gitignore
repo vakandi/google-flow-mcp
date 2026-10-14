@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 node_modules/
+*.tgz
 
 # Local run artifacts
 results/
@@ -9,13 +10,8 @@ results/
 .sisyphus/
 .omo/
 
-# Screenshots at repo root
+# Screenshots at repo root (real ones live in docs/screenshots/)
 insights_*.png
-
-# Store build: contains the Chrome extension SIGNING KEY and an update_url.
-# Publishing it lets anyone ship an update Chrome accepts as this extension.
-# Never commit this folder.
-veo-automation-extension-original/
 
 # Local secrets / env
 .env

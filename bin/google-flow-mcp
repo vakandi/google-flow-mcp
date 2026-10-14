@@ -1,0 +1,65 @@
+#!/usr/bin/env node
+"use strict";
+
+// npx entry point for google-flow-mcp.
+//
+// mcp_server.py is pure standard library (JSON-RPC 2.0 over stdio), so there is
+// nothing to install: find a Python 3 interpreter and hand stdio to it.
+
+const { execSync, spawn } = require("child_process");
+const path = require("path");
+const fs = require("fs");
+
+const ROOT = path.resolve(__dirname, "..");
+const PYTHON_SCRIPT = path.join(ROOT, "mcp_server.py");
+
+function log(msg) {
+  process.stderr.write(`\x1b[36m[google-flow-mcp]\x1b[0m ${msg}\n`);
+}
+
+function findPython() {
+  for (const cmd of ["python3", "python"]) {
+    try {
+      const raw = execSync(`${cmd} -c "import sys; print('%d.%d' % sys.version_info[:2])"`, {
+        encoding: "utf-8",
+        timeout: 5000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      const [major, minor] = raw.split(".").map(Number);
+      if (major >= 3) return cmd;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function main() {
+  if (!fs.existsSync(PYTHON_SCRIPT)) {
+    process.stderr.write(`Entry point missing: ${PYTHON_SCRIPT}\n`);
+    process.exit(1);
+  }
+
+  const python = findPython();
+  if (!python) {
+    process.stderr.write("Python 3 is required and was not found on PATH.\n");
+    process.exit(1);
+  }
+
+  if (!process.env.GOOGLE_STUDIO_MCP_QUIET) {
+    log(`using ${python}, MCP server starting — Flow tools need the extension + server.py running`);
+  }
+
+  const child = spawn(python, [PYTHON_SCRIPT, ...process.argv.slice(2)], {
+    stdio: "inherit",
+    cwd: ROOT,
+    env: process.env,
+  });
+  child.on("error", (err) => {
+    process.stderr.write(`Failed to start the MCP server: ${err.message}\n`);
+    process.exit(1);
+  });
+  child.on("exit", (code) => process.exit(code === null ? 1 : code));
+}
+
+main();
